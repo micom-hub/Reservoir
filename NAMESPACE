@@ -1,0 +1,57 @@
+useDynLib(Reservoir, .registration = TRUE)
+importFrom(Rcpp, sourceCpp)
+importFrom(stats, convolve, dgamma, rbeta, rbinom, rgamma, rlnorm, rnbinom,
+           rnorm, rpois, runif, quantile, sd, aggregate, setNames)
+importFrom(graphics, plot, lines, legend, par, mtext, title, abline)
+importFrom(grDevices, adjustcolor)
+importFrom(utils, read.csv, write.csv, tail)
+
+#configuration building functions
+export(model_structure)
+export(population_spec)
+export(intervention_policy)
+export(reservoir_config)
+
+S3method(print, reservoir_structure)
+S3method(print, reservoir_population)
+S3method(print, reservoir_policy)
+S3method(print, reservoir_config)
+
+#sampling
+export(sample_params)
+export(check_sampler)
+export(compute_ip)
+
+#model configuration
+export(setup_sim)
+export(set_initial_conditions)
+export(build_cfg_base)
+export(build_cfg_vector)
+export(build_cfg_waterborne)
+
+#simulation
+export(run_sim)
+export(run_replicates)
+export(summary_sim)
+export(plot_sim)
+export(compartment)
+export(compute_daily_rt)
+export(compute_daily_rt_vector)
+export(compute_daily_rt_waterborne)
+
+#dataset generation
+export(generate_dataset)
+
+#validation
+export(validate_structure)
+export(validate_dataset)
+
+#export
+export(extract_compartment_csvs)
+export(extract_all_runs_single_csv)
+
+#custom model builder
+export(build_model)
+export(model_SEIR)
+export(model_SEIAR)
+export(model_SEIARH)
