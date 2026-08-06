@@ -1,0 +1,28 @@
+Package: Reservoir
+Type: Package
+Title: Modular Stochastic Epidemic Simulation and Synthetic Surveillance Data Generation
+Version: 0.3.2
+Authors@R: person("Reiden-Magdaleno", email = "reiden@umich.edu",
+                  role = c("aut", "cre"))
+Description: A modular pipeline for generating labeled synthetic epidemic
+    trajectories across human-to-human, vector-borne, and environmental
+    transmission mechanisms. Model structure is declared explicitly through
+    a compartment/edge specification, allowing SIR, SEIR, SIS, SEIS, SIAR,
+    SEIAR and related skeletons to be generated from a common set of
+    adaptive tau-leaping C++ engines. Combines a hierarchical parameter
+    sampler, next-generation-matrix Rt computation, scheduled and reactive
+    (threshold-triggered) intervention policies, and a multi-stage
+    observation model that adds realistic surveillance noise
+    (under-reporting, weekday effects, reporting delays, laboratory batch
+    noise, and overdispersion).
+License: MIT + file LICENSE
+Encoding: UTF-8
+Imports:
+    Rcpp,
+    stats,
+    graphics,
+    grDevices,
+    utils
+LinkingTo:
+    Rcpp
+RoxygenNote: 7.3.1
