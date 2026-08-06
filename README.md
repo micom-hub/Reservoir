@@ -1,5 +1,5 @@
 © 2025 The Regents of the University of Michigan  
-Reiden Magdaleno -- Michigan Public Health Integrated Center for Outbreak Analytics and Modeling
+Carson Dudley, Reiden Magdaleno -- Michigan Public Health Integrated Center for Outbreak Analytics and Modeling
 
 # Reservoir: A Large-Scale Simulated Dataset for Training and Evaluating Epidemiological Models
 
