@@ -9,7 +9,7 @@ Carson Dudley, Reiden Magdaleno -- Michigan Public Health Integrated Center for 
 ---
 
 ## Try It
-
+(reservoir_tryit_getting_started.qmd)
 
 ---
 
