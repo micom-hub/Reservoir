@@ -10,21 +10,16 @@ Carson Dudley, Reiden Magdaleno -- Michigan Public Health Integrated Center for 
 
 ## Try It
 
-[Run the Colab Tutorial](_______)  
-_No installation or coding required._
 
 ---
 
 ## Paper
 
 - **Reservoir Paper:** [Reservoir: A Large-Scale Simulated Dataset for Training and Evaluating Epidemiological Models]() <br>
-  **
+
 ---
 
 ## Installation
-
-
-Download `Reservoir-main` as a ZIP from GitHub (green **Code** button to **Download ZIP**) and unzip it. That folder **is** the package.
 
 Reservoir contains C++ that has to be compiled on your machine, so you need a compiler:
 
@@ -34,6 +29,19 @@ Reservoir contains C++ that has to be compiled on your machine, so you need a co
 | Windows | install Rtools from CRAN, matching your R version |
 | Linux   | `sudo apt install r-base-dev`                     |
 
+
+### Downloading Reservoir through Github
+
+There are 2 ways to download Reservoir.
+
+In R:
+```{r}
+install.packages("remotes")
+remotes::install_github("micom-hub/Reservoir")
+```
+
+You can also directly download `Reservoir-main` as a ZIP from GitHub (green **Code** button to **Download ZIP**) and unzip it. That folder **is** the package.
+
 Then in R:
 
 ```{r}
@@ -42,6 +50,20 @@ install.packages("Rcpp")
 install.packages(path.expand("~/Downloads/Reservoir-main"),
                  repos = NULL, type = "source")
 ```
+
+### Restart R
+
+**Session: Restart R** (Ctrl/Cmd+Shift+F10) or go to the session tab at the top and select **Restart R**.
+
+
+### Load Library
+
+In R:
+```{r}
+library(Reservoir)
+```
+
+
 
 
 
