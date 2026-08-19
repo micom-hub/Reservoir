@@ -1,0 +1,664 @@
+---
+title: "Reservoir: Getting Started"
+subtitle: "Six short exercises, plus a function reference"
+author: ""
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    number-sections: true
+    code-copy: true
+    code-overflow: wrap
+    theme: cosmo
+    embed-resources: true
+  pdf:
+    toc: true
+    number-sections: true
+execute:
+  eval: false      # chunks are for copying, not for rendering -- simulations take minutes
+  echo: true
+knitr:
+  opts_chunk:
+    comment: "#>"
+---
+
+## Before you start {.unnumbered}
+
+**Welcome to the Reservoir tutorial! This introductory tutorial should take about an hour** for people comfortable with basic R (running code, plotting, etc.) but not necessarily with writing functions or handling matrices. Most exercises will ask you to change a number/parameter within the code block and observe what happens.
+
+::: callout-tip
+Please keep a note of anything confusing. Thank you!
+:::
+
+::: callout-note
+## Note
+
+Reservoir writes uses **L** to denote the latent (exposed) compartment. Most of the time, literature and textbooks write **E**.
+:::
+
+------------------------------------------------------------------------
+
+# Installing {#sec-install}
+
+Download `Reservoir-main` as a ZIP from GitHub (green **Code** button to **Download ZIP**) and unzip it. That folder **is** the package.
+
+Reservoir contains C++ that has to be compiled on your machine, so you need a compiler:
+
+| OS      | what to run                                       |
+|---------|---------------------------------------------------|
+| macOS   | `xcode-select --install` in Terminal              |
+| Windows | install Rtools from CRAN, matching your R version |
+| Linux   | `sudo apt install r-base-dev`                     |
+
+Then in R:
+
+```{r}
+install.packages("Rcpp")
+
+install.packages(path.expand("~/Downloads/Reservoir-main"),
+                 repos = NULL, type = "source")
+```
+
+`path.expand()` turns `~` into your full home path. R needs that here — inside quotes the shell won't expand it for you.
+
+Expect a couple of minutes of compiler output. Warnings are normal; you want the last line to read `* DONE (Reservoir)`.
+
+::: callout-important
+## Restart R
+
+**Session: Restart R** (Ctrl/Cmd+Shift+F10) or go to the session tab at the top and select **Restart R**. R holds the old compiled library open, so installing over a loaded package can leave you running stale C++.
+:::
+
+```{r}
+library(Reservoir)
+```
+
+::: callout-warning
+## Stuck?
+
+If Reservoir installs but `library(Reservoir)` fails, check to see if you accidentally skipped the restart.
+:::
+
+------------------------------------------------------------------------
+
+# Your first epidemic
+
+```{r}
+library(Reservoir)
+
+ds <- generate_dataset(
+  n_per_mechanism = 1,                    # how many simulations
+  mechanisms = "base",               # person-to-person spread
+  population = population_spec(
+                      num_days = 200,     # simulate 200 days
+                      pop_size = 300000   # population of 300,000 people
+                    ),
+  config = reservoir_config(
+                      r0_base = 2.5       # each case infects 2.5 others
+                    ),
+  scope  = "full",
+  seed  = 1,                    # ensures reproductibility
+  verbose  = FALSE
+)
+
+run <- ds$base[[1]]     # pull out the single simulation
+```
+
+Look at it:
+
+```{r}
+nf <- run$noise_full
+
+op <- par(mfrow = c(2, 3), mar = c(4, 4, 2, 1))
+plot(run$daily_true,           type = "l", lwd = 2, main = "Cases (true)",  xlab = "Day", ylab = "")
+plot(nf$daily_cases_reported,  type = "l", lwd = 2, main = "Cases (reported)", xlab = "Day", ylab = "")
+plot(nf$daily_hosp_true,       type = "l", lwd = 2, main = "Hospitalisations", xlab = "Day", ylab = "")
+plot(nf$daily_death_true,      type = "l", lwd = 2, main = "Deaths",        xlab = "Day", ylab = "")
+plot(nf$wastewater_normalized, type = "l", lwd = 2, main = "Wastewater",    xlab = "Day", ylab = "")
+plot(run$daily_Rt,             type = "l", lwd = 2, main = "Rt",            xlab = "Day", ylab = "")
+abline(h = 1, lty = 2, col = "red")
+par(op)
+
+summary_sim(run)
+run$summary$R0
+run$summary$attack_rate
+run$summary$peak_day
+```
+
+`run` is a list, so `$` gets you pieces of it. If you call `run$daily_true`, it will return a vector of 200 numbers that represents the daily case count.
+
+```{r}
+plot(run$daily_Rt, type = "l", lwd = 2, xlab = "Day", ylab = "Rt")
+```
+
+::: callout-note
+## Your turn
+
+Change `seed = 1` to `seed = 2` and run it again.
+
+**Q1.** The settings are identical apart from the seed. Why is the curve different?
+:::
+
+------------------------------------------------------------------------
+
+# Changing the disease
+
+`reservoir_config()` holds the disease characteristics. Three you'll use most:
+
+| setting           | meaning                                                |
+|------------------------------------|------------------------------------|
+| `r0_base`         | how many people each case infects                      |
+| `infectious_days` | how long someone stays infectious                      |
+| `latent_days`     | how long after infection before they become infectious |
+
+```{r}
+slow <- generate_dataset(1, "base",
+  population = population_spec(num_days = 300, pop_size = 300000),
+  config = reservoir_config(r0_base = 2.5, infectious_days = 10),
+  scope = "full", seed = 3, verbose = FALSE)$base[[1]]
+
+fast <- generate_dataset(1, "base",
+  population = population_spec(num_days = 300, pop_size = 300000),
+  config = reservoir_config(r0_base = 4.0, infectious_days = 3),
+  scope = "full", seed = 3, verbose = FALSE)$base[[1]]
+
+plot(slow$daily_true, type = "l", lwd = 2, col = "blue",
+     ylim = c(0, max(fast$daily_true)),
+     xlab = "Day", ylab = "New cases per day")
+lines(fast$daily_true, lwd = 2, col = "red")
+legend("topright", c("R0 = 2.5", "R0 = 4.0"),
+       col = c("blue", "red"), lwd = 2)
+```
+
+```{r}
+slow$summary$attack_rate      # fraction infected
+fast$summary$attack_rate
+
+slow$summary$peak_day
+fast$summary$peak_day
+```
+
+::: callout-note
+## Your turn
+
+Try `r0_base = 0.9`. What happens, and why does it make sense?
+:::
+
+## Pinning versus sampling
+
+A single number **pins** a value for every run. A pair gives a **range**, and each simulation draws its own:
+
+```{r}
+
+reservoir_config(r0_base = 2.5)      # every run has exactly R0 = 2.5
+reservoir_config(r0_base = c(2, 4))  # each run draws its own; 90% in [2, 4]
+```
+
+This works for `r0_base`, `r0_vector`, `r0_waterborne`, `infectious_days`, `latent_days` and `immunity_days`.
+
+Anything you don't mention is sampled from its default prior, so two runs with the same config are still different diseases unless you pin what matters.
+
+```{r}
+pinned <- generate_dataset(20, "base",
+  population = population_spec(num_days = 200, pop_size = 3e5),
+  config = reservoir_config(r0_base = 2.5, infectious_days = 6),
+  scope = "cases_only", seed = 1, verbose = FALSE)$base
+
+varied <- generate_dataset(20, "base",
+  population = population_spec(num_days = 200, pop_size = 3e5),
+  config = reservoir_config(r0_base = c(1.5, 4.0), infectious_days = c(3, 12)),
+  scope = "cases_only", seed = 1, verbose = FALSE)$base
+
+round(range(sapply(pinned, function(r) r$summary$R0)), 2)   # narrow
+round(range(sapply(varied, function(r) r$summary$R0)), 2)   # wide
+```
+
+```{r}
+#| fig-height: 4
+op <- par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+for (nm in c("pinned", "varied")) {
+  set <- get(nm)
+  plot(NULL, xlim = c(1, 200), ylim = c(0, 1), main = nm,
+       xlab = "Day", ylab = "cases / peak")
+  for (r in set) lines(r$daily_true / max(r$daily_true), col = "grey50")
+}
+par(op)
+```
+
+------------------------------------------------------------------------
+
+# Where the epidemic starts
+
+Every epidemic needs a starting point: how many people are already infected, and how many are already immune. Both live in `population_spec()`.
+
+## How many infections to start with
+
+`seed_frac` is the fraction of the population infected on day 1. A fraction rather than a count, so the same configuration works whether the population is 5,000 or 40 million.
+
+```{r}
+pop_big <- population_spec(num_days = 300, pop_size = 3e5, seed_frac = 1e-3)
+pop_sml <- population_spec(num_days = 300, pop_size = 3e5, seed_frac = 1e-6)
+
+cfg <- reservoir_config(r0_base = 2.0, deterministic = TRUE)
+
+big <- generate_dataset(1, "base", population = pop_big, config = cfg,
+                        scope = "full", seed = 3, verbose = FALSE)$base[[1]]
+sml <- generate_dataset(1, "base", population = pop_sml, config = cfg,
+                        scope = "full", seed = 3, verbose = FALSE)$base[[1]]
+
+plot(big$daily_true, type = "l", lwd = 2, col = "darkred",
+     xlab = "Day", ylab = "New cases per day")
+lines(sml$daily_true, lwd = 2, col = "steelblue")
+legend("topright", c("seed_frac 1e-3 (300 people)",
+                     "seed_frac 1e-6 (0.3 people)"),
+       col = c("darkred", "steelblue"), lwd = 2)
+```
+
+```{r}
+c(big = big$summary$peak_day, small = sml$summary$peak_day)
+```
+
+## Starting in a population that already has immunity
+
+`novel = TRUE` (the default) means nobody is immune, a genuinely new pathogen. `novel = FALSE` starts with part of the population already recovered.
+
+```{r}
+novel <- generate_dataset(1, "base",
+  population = population_spec(num_days = 300, pop_size = 3e5,
+                               seed_frac = 1e-4, novel = TRUE),
+  config = reservoir_config(r0_base = 2.5, deterministic = TRUE),
+  scope = "full", seed = 4, verbose = FALSE)$base[[1]]
+
+seeded <- generate_dataset(1, "base",
+  population = population_spec(num_days = 300, pop_size = 3e5,
+                               seed_frac = 1e-4, novel = FALSE,
+                               immune_frac = 0.5),   # half already immune
+  config = reservoir_config(r0_base = 2.5, deterministic = TRUE),
+  scope = "full", seed = 4, verbose = FALSE)$base[[1]]
+
+plot(novel$daily_true, type = "l", lwd = 2, col = "grey30",
+     xlab = "Day", ylab = "New cases per day")
+lines(seeded$daily_true, lwd = 2, col = "purple")
+legend("topright", c("Novel (nobody immune)", "50% already immune"),
+       col = c("grey30", "purple"), lwd = 2)
+```
+
+```{r}
+# Rt starts lower when part of the population is already immune
+round(c(novel = novel$daily_Rt[1], immune = seeded$daily_Rt[1]), 3)
+```
+
+::: callout-note
+## Your turn
+
+Try `immune_frac = 0.6` with `r0_base = 2.5`.
+:::
+
+------------------------------------------------------------------------
+
+# Adding an intervention
+
+Measures like isolation and quarantine can be switched on for a stretch of days.
+
+```{r}
+pop <- population_spec(num_days = 300, pop_size = 300000)
+cfg <- reservoir_config(r0_base = 2.5)
+
+st <- model_structure(has_isolation = TRUE)
+
+# isolation running from day 40 to day 160
+policy <- intervention_policy(
+  mode = "scheduled",
+  enable_prob = 1.0,      # 1.0 = definitely happens
+  start_day = 40,
+  duration = 120,      # so it ends on day 160
+  iso_rate  = 0.30      # higher = people isolated faster
+)
+
+with_iso <- generate_dataset(1, "base", structure = st, population = pop,
+  config = cfg, policy = policy, scope = "full",
+  seed = 5, verbose = FALSE)$base[[1]]
+
+without <- generate_dataset(1, "base", structure = st, population = pop,
+  config = cfg, scope = "full",
+  seed = 5, verbose = FALSE)$base[[1]]
+
+plot(without$daily_true, type = "l", lwd = 2, col = "grey40",
+     xlab = "Day", ylab = "New cases per day")
+lines(with_iso$daily_true, lwd = 2, col = "darkred")
+abline(v = c(40, 160), lty = 2)
+legend("topright", c("No isolation", "With isolation"),
+       col = c("grey40", "darkred"), lwd = 2)
+
+without$summary$attack_rate
+with_iso$summary$attack_rate
+```
+
+::: callout-note
+## Your turn
+
+Change `start_day` to 100, then to 20.
+
+**Q4.** Starting at day 20 helps *less* than starting at day 40. Why would acting earlier be worse?
+:::
+
+------------------------------------------------------------------------
+
+# The surveillance streams
+
+Everything so far used `daily_true`, the real number of infections. No surveillance system sees that. Reservoir also produces what a health department would actually record.
+
+```{r}
+srun <- generate_dataset(1, "base",
+  population = population_spec(num_days = 250, pop_size = 5e5, num_ages = 3),
+  config = reservoir_config(r0_base = 2.5),
+  scope  = "full",           # required; "cases_only" skips all of this
+  seed = 2, verbose = FALSE)$base[[1]]
+
+nf <- srun$noise_full
+names(nf)
+```
+
+Nine fields. Six kinds of data, three of which come in both a **true** and a **reported** version:
+
+| stream             | true                  | reported                   |
+|--------------------|-----------------------|----------------------------|
+| cases              | `srun$daily_true`     | `nf$daily_cases_reported`  |
+| hospitalizations   | `nf$daily_hosp_true`  | `nf$daily_hosp_reported`   |
+| deaths             | `nf$daily_death_true` | `nf$daily_death_reported`  |
+| hospital occupancy |                       | `nf$hosp_occupancy`        |
+| wastewater         |                       | `nf$wastewater_normalized` |
+| syndromic          |                       | `nf$syndromic_signal`      |
+
+`nf$wastewater_raw` is the signal before normalizing against a faecal marker; `wastewater_normalized` is the one to use.
+
+```{r}
+#| fig-width: 12
+#| fig-height: 6
+op <- par(mfrow = c(2, 4), mar = c(4, 4, 2, 1))
+
+plot(srun$daily_true, type = "l", lwd = 2, main = "True infections",
+     xlab = "Day", ylab = "")
+plot(nf$daily_cases_reported,  type = "l", lwd = 2, main = "Reported cases",
+     xlab = "Day", ylab = "")
+plot(nf$daily_hosp_true, type = "l", lwd = 2, main = "Hospitalisations",
+     xlab = "Day", ylab = "")
+plot(nf$hosp_occupancy, type = "l", lwd = 2, main = "Hospital occupancy",
+     xlab = "Day", ylab = "")
+plot(nf$daily_death_true,  type = "l", lwd = 2, main = "Deaths",
+     xlab = "Day", ylab = "")
+plot(nf$wastewater_normalized, type = "l", lwd = 2, main = "Wastewater",
+     xlab = "Day", ylab = "")
+plot(nf$syndromic_signal,      type = "l", lwd = 2, main = "Syndromic",
+     xlab = "Day", ylab = "")
+plot(srun$daily_Rt, type = "l", lwd = 2, main = "Rt",
+     xlab = "Day", ylab = "")
+abline(h = 1, lty = 2, col = "red")
+
+par(op)
+```
+
+## What the observation model does to cases
+
+```{r}
+plot(srun$daily_true, type = "l", lwd = 2, col = "grey30",
+     xlab = "Day", ylab = "Cases per day")
+lines(nf$daily_cases_reported, lwd = 2, col = "steelblue")
+legend("topright", c("True infections", "Reported"),
+       col = c("grey30", "steelblue"), lwd = 2)
+```
+
+```{r}
+# what fraction of infections was ever reported?
+round(sum(nf$daily_cases_reported) / sum(srun$daily_true), 3)
+
+# how far behind is the reported series?
+cc <- sapply(0:21, function(L) {
+  n <- length(srun$daily_true) - L
+  cor(srun$daily_true[1:n], nf$daily_cases_reported[(1 + L):(L + n)])
+})
+which.max(cc) - 1        # lag in days
+```
+
+Reported cases are lower (not everyone is detected), noisier (weekday effects and laboratory batch variation), and shifted later (reporting delays).
+
+::: callout-note
+## Your turn
+
+1.  Plot `nf$daily_hosp_true` against `srun$daily_true`. Which peaks first?
+2.  Compute `cor(nf$wastewater_normalized, srun$daily_true)`.
+3.  Re-run with `scope = "cases_only"` and check `srun$noise_full`.
+:::
+
+------------------------------------------------------------------------
+
+# Making a set of simulations
+
+One simulation is one possible epidemic and usually, you want many.
+
+```{r}
+ds <- generate_dataset(
+  n_per_mechanism = 5,
+  mechanisms = "base",
+  population = population_spec(num_days = 250, pop_size = 300000),
+  config = reservoir_config(r0_base = c(1.5, 3.5)),   # a RANGE
+  scope = "full",
+  seed = 7,
+  verbose = FALSE
+)
+
+```
+
+Writing `r0_base = c(1.5, 3.5)` instead of a single number means each simulation draws its own R0 from that rangeL a spread of epidemics rather than twenty copies of one.
+
+```{r}
+attack_rates <- sapply(ds$base, function(r) r$summary$attack_rate)
+
+hist(attack_rates, breaks = 10,
+     xlab = "Fraction of population infected",
+     main = "Attack rate across 20 simulations")
+
+range(attack_rates)
+```
+
+`sapply` runs the same small operation on every simulation and collects the answers.
+
+Save to a file:
+
+```{r}
+ds <- generate_dataset(
+  n_per_mechanism = 5,
+  mechanisms = "base",
+  population = population_spec(num_days = 250, pop_size = 300000),
+  config = reservoir_config(r0_base = c(1.5, 3.5)),
+  scope = "full",
+  save_dir = "my_simulations",       # <- saves here
+  seed = 7,
+  verbose = FALSE
+)
+
+extract_all_runs_single_csv("my_simulations/base_runs.rds",
+                            "my_simulations/all_runs.csv")
+
+d <- read.csv("my_simulations/all_runs.csv")
+dim(d)
+head(d[, 1:8])
+```
+
+::: callout-tip
+Every export carries `run_id`, `day`, `cases_true` and `Rt`. Add `include_noise = TRUE` for the surveillance streams as well.
+:::
+
+::: callout-note
+## Your turn
+
+Widen `r0_base` to `c(1.2, 5.0)` and redo the histogram.
+
+**Q5.** In the CSV, some columns repeat the same value down a whole run and others change every row. What's the difference?
+:::
+
+------------------------------------------------------------------------
+
+# Function reference {#sec-reference}
+
+## `generate_dataset()`
+
+The main entry point. Draws parameters, runs simulations, returns labelled runs.
+
+```{r}
+ds <- generate_dataset(
+  n_per_mechanism = 50,
+  mechanisms      = c("base", "vector", "waterborne"),
+  structure       = model_structure(),
+  population      = population_spec(),
+  policy          = intervention_policy(),
+  config          = reservoir_config(),
+  scope           = "full",
+  min_attack_rate = 0,
+  max_attempts    = 200,
+  save_dir        = NULL,
+  seed            = NULL,
+  verbose         = TRUE
+)
+```
+
+| argument | meaning |
+|------------------------------------|------------------------------------|
+| `n_per_mechanism` | how many **valid** runs to collect (fizzles are retried, not counted) |
+| `mechanisms` | any of `"base"` (contact), `"vector"`, `"waterborne"` |
+| `structure` | from `model_structure()` — which compartments exist |
+| `population` | from `population_spec()` — size, patches, ages, horizon |
+| `policy` | from `intervention_policy()` |
+| `config` | from `reservoir_config()` — priors and observation model |
+| `scope` | `"full"`, `"signals"` (no Rt), `"cases_only"` (fastest) |
+| `min_attack_rate` | discard runs below this cumulative attack rate |
+| `max_attempts` | give up after this many draws per mechanism |
+| `save_dir` | writes `<mechanism>_runs.rds`; `NULL` keeps in memory |
+| `seed` | base RNG seed; run *i* uses `seed + i` |
+
+**Returns** a list with one element per mechanism, each a list of runs.
+
+**Each run contains** `daily_true` (true incidence), `daily_Rt`, `noise_limited`, `noise_full` (the six surveillance streams), `state_over_time`, `cfg`, `params`, `summary`.
+
+::: callout-note
+`scope` **overrides** the individual `compute_*` flags in `config`. Rt and the full observation pipeline are the two expensive stages, so `"cases_only"` is much faster for large runs.
+:::
+
+## `model_structure()`
+
+Declares which compartments and transitions exist. Every `has_*` accepts `TRUE`, `FALSE`, **or a probability** — `has_latent = 0.7` draws it per run and labels the output.
+
+| argument | default | controls |
+|------------------------|------------------------|------------------------|
+| `has_latent` | `TRUE` | L and QL. **Structural** — FALSE routes infections straight to Is/Ia |
+| `has_asymptomatic` | `TRUE` | Ia compartment |
+| `has_recovery` | `TRUE` | FALSE gives SI/SLI; needs `beta_direct` in config |
+| `immunity` | `"waning"` | `"waning"` / `"permanent"` / `"none"`. **`"none"` is structural** (SIS) |
+| `n_waning_stages` | `1` | 1–3 sequential R compartments |
+| `has_isolation` | `TRUE` | Iso compartment |
+| `has_quarantine` | `FALSE` | Qs and QL |
+| `has_pep` | `FALSE` | Spost. **Requires `has_latent`** |
+| `has_vaccination` | `FALSE` | Sprep (leaky vaccination) |
+| `has_demography` | `TRUE` | births and background deaths |
+| `has_importation` | `TRUE` | external case seeding |
+
+## `population_spec()`
+
+Population geometry. `NULL` means "sample it per run."
+
+| argument | default |   |
+|------------------------|------------------------|------------------------|
+| `pop_size` | `NULL` | total population N |
+| `pop_size_range` | `c(5e3, 4e7)` | log-uniform range when sampling |
+| `num_pops` | `NULL` | number of patches (P) |
+| `num_ages` | `NULL` | number of age groups (A) |
+| `num_pops_probs` | `c("1"=.67, "2"=.17, "3"=.16)` | sampling weights for P |
+| `num_ages_probs` | `c("1"=.50, "2"=.17, "3"=.17, "5"=.16)` | weights for A |
+| `num_days` | `NULL` | simulation horizon |
+| `num_days_probs` | `c("365"=.60, ...)` | weights for horizon |
+| `population_distribution` | `NULL` | P×A fractions; Dirichlet draw if NULL |
+| `contact_matrix` | `NULL` | A×A; POLYMOD if NULL |
+| `mixing_matrix` | `NULL` | P×P, rows sum to 1 |
+| `seed_frac` | `NULL` | initial infections as a fraction of N |
+| `seed_frac_range` | `c(1e-6, 5e-4)` | range for the above |
+| `novel` | `TRUE` | FALSE seeds pre-existing immunity |
+| `immune_frac` | `NULL` | explicit immunity; else from `1 - 1/R0` |
+
+## `intervention_policy()`
+
+| argument | default |   |
+|------------------------|------------------------|------------------------|
+| `mode` | `"scheduled"` | or `"reactive"` |
+| `enable_prob` | `0.5` | probability a run gets any intervention |
+| `start_day`, `duration` | `NULL` | scheduled mode timing |
+| `on_threshold`, `off_threshold` | `NULL` | reactive triggers. **Below 1 = a fraction of N** |
+| `trigger_delay` | `NULL` | days between crossing and taking effect |
+| `contact_reduction` | `NULL` | β multiplier while reactive is active |
+| `iso_rate`, `quar_rate`, `pep_rate` | `NULL` | daily rates — `0.3` ≈ 3.3 days to isolation |
+| `prep_start_rate` | `NULL` | vaccination campaign rate |
+| `prep_eff` | `NULL` | susceptibility reduction, 0–1 |
+| `school_closure`, `work_closure` | `NULL` | contact reductions folded into β |
+
+::: callout-warning
+`prep_eff` alone does nothing — `prep_start_rate` must be non-zero or `Sprep` never populates.
+:::
+
+## `reservoir_config()`
+
+Priors and the observation model. 50+ arguments; these are the ones you'll touch.
+
+**Distribution fields take three forms:**
+
+```{r}
+r0_base = 2.5                        # pin it
+r0_base = c(2, 4)                    # a central 90% interval
+r0_base = list(meanlog = log(3), sdlog = 0.7, shift = 1, floor = 1.1)
+```
+
+Applies to `r0_base`, `r0_vector`, `r0_waterborne`, `infectious_days`, `latent_days`, `immunity_days`.
+
+| group | arguments |
+|------------------------------------|------------------------------------|
+| **R0** | `r0_base`, `r0_vector`, `r0_waterborne` |
+| **durations** | `infectious_days`, `latent_days`, `immunity_days` |
+| **asymptomatic** | `p_asym_beta`, `asymp_trans_beta`, `kappa_logrange` |
+| **waves** | `wave_count_probs`, `wave_mult_sdlog`, crash/surge/dip-surge probs |
+| **seasonality** | `seasonality_prob`, `n_harmonics_range`, `seasonality_amp_range`, `daily_noise_sd` |
+| **super-spreading** | `superspread_event_prob_range`, `superspread_boost_range`, `superspread_k_logrange` |
+| **demography** | `birth_rate_range`, `death_rate_factor`, `importation_logrange` |
+| **interventions** | `iso_rate_range`, `quar_rate_range`, `pep_rate_range`, `prep_*_range` |
+| **severity** | `hosp_prob_logrange`, `death_prob_logrange` |
+| **observation** | `detection_logrange`, `report_delay_range`, `r_nb`, four stage probabilities |
+| **mechanism** | `vector = list(...)`, `waterborne = list(...)` |
+| **engine** | `epsilon`, `Ncritical`, `exactThreshold`, `maxtau` |
+| **scope** | `compute_rt`, `compute_noise_full`, `compute_wastewater`, `compute_syndromic`, `compute_hosp_deaths` |
+
+::: callout-tip
+## `deterministic = TRUE`
+
+Switches off seasonality, waves, daily noise, and super-spreading in one argument.
+:::
+
+## `extract_all_runs_single_csv()`
+
+```{r}
+extract_all_runs_single_csv(
+  rds_path = "output/base_runs.rds",
+  out_path = "output/base_all.csv",
+  aggregate = TRUE,     # FALSE gives one column per (patch, age)
+  include_noise = FALSE     # TRUE adds the six surveillance streams
+)
+```
+
+Leading columns are `run_id`, `mechanism`, `day`, `cases_true`, `Rt`, then structure labels, then compartments.
+
+# Troubleshooting {.unnumbered}
+
+| problem | likely cause |
+|------------------------------------|------------------------------------|
+| `could not find function "generate_dataset"` | `library(Reservoir)` not run, or restart skipped after installing |
+| `This run has no compartment data` | used `scope = "cases_only"`; use `"full"` |
+| Plot looks empty | the epidemic died out: try a higher `r0_base` or a different seed |
+| Compile errors on install | missing compiler; see @sec-install |
