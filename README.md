@@ -23,11 +23,27 @@ _No installation or coding required._
 
 ## Installation
 
-To install the latest version directly from GitHub:
 
-```bash
+Download `Reservoir-main` as a ZIP from GitHub (green **Code** button to **Download ZIP**) and unzip it. That folder **is** the package.
 
+Reservoir contains C++ that has to be compiled on your machine, so you need a compiler:
+
+| OS      | what to run                                       |
+|---------|---------------------------------------------------|
+| macOS   | `xcode-select --install` in Terminal              |
+| Windows | install Rtools from CRAN, matching your R version |
+| Linux   | `sudo apt install r-base-dev`                     |
+
+Then in R:
+
+```{r}
+install.packages("Rcpp")
+
+install.packages(path.expand("~/Downloads/Reservoir-main"),
+                 repos = NULL, type = "source")
 ```
+
+
 
 
 
