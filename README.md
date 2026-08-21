@@ -1,5 +1,3 @@
-© 2025 The Regents of the University of Michigan  
-Carson Dudley, Reiden Magdaleno -- Michigan Public Health Integrated Center for Outbreak Analytics and Modeling
 
 # Reservoir: A Large-Scale Simulated Dataset for Training and Evaluating Epidemiological Models
 
@@ -15,7 +13,7 @@ Carson Dudley, Reiden Magdaleno -- Michigan Public Health Integrated Center for 
 
 ## Paper
 
-- **Reservoir Paper:** [Reservoir: A Large-Scale Simulated Dataset for Training and Evaluating Epidemiological Models]() <br>
+- **Reservoir Paper:** [Reservoir: A Large-Scale Simulated Dataset for Training and Evaluating Epidemiological Models]() <br> Carson Dudley, Reiden Magdaleno, Marisa Eisenberg -- Michigan Public Health Integrated Center for Outbreak Analytics and Modeling
 
 ---
 
@@ -66,6 +64,8 @@ library(Reservoir)
 
 
 
+
+© 2025 The Regents of the University of Michigan and Carson Dudley, Reiden Magdaleno, and Marisa Eisenberg.
 
 
 
