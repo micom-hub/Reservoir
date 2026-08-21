@@ -7,7 +7,7 @@
 ---
 
 ## Try It 
-Tutorial: [reservoir_tryit_getting_started.qmd](https://github.com/micom-hub/Reservoir/blob/main/reservoir_tryit_getting_started.qmd)
+- Tutorial: [reservoir_tryit_getting_started.qmd](https://github.com/micom-hub/Reservoir/blob/main/reservoir_tryit_getting_started.qmd)
 
 ---
 
