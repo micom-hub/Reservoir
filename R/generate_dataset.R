@@ -361,7 +361,6 @@ generate_dataset <- function(
     population      = population_spec(),
     policy          = intervention_policy(),
     config   = reservoir_config(),
-    mechanisms  = .canon_mechanism(mechanisms)
     scope           = c("full", "signals", "cases_only"),
     min_attack_rate = 0.0,
     max_attempts    = 200,
@@ -369,7 +368,7 @@ generate_dataset <- function(
     seed = NULL,
     verbose  = TRUE # This gives run attempts
 ) {
-
+  mechanisms <- .canon_mechanism(mechanisms)
   scope  <- match.arg(scope)
   config <- .scope_config(config, scope)
 
