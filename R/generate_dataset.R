@@ -327,6 +327,14 @@ run_one <- function(mechanism, params, run_id = 1L,
   )
 }
 
+################################################################################
+# environmental rename
+################################################################################
+.canon_mechanism <- function(x) {
+  x <- as.character(x)
+  x[x == "environmental"] <- "waterborne"
+  x
+}
 
 ################################################################################
 # generate_dataset
@@ -352,7 +360,8 @@ generate_dataset <- function(
     structure       = model_structure(),
     population      = population_spec(),
     policy          = intervention_policy(),
-    config          = reservoir_config(),
+    config   = reservoir_config(),
+    mechanisms  = .canon_mechanism(mechanisms)
     scope           = c("full", "signals", "cases_only"),
     min_attack_rate = 0.0,
     max_attempts    = 200,
