@@ -28,13 +28,9 @@ knitr:
 
 **Welcome to the Reservoir tutorial! This introductory tutorial should take about an hour** for people comfortable with basic R (running code, plotting, etc.) but not necessarily with writing functions or handling matrices. Most exercises will ask you to change a number/parameter within the code block and observe what happens.
 
-::: callout-tip
-Please keep a note of anything confusing. Thank you!
-:::
-
-::: callout-note
 ## Note
 
+::: callout-note
 Reservoir writes uses **L** to denote the latent (exposed) compartment. Most of the time, literature and textbooks write **E**.
 :::
 
@@ -42,7 +38,7 @@ Reservoir writes uses **L** to denote the latent (exposed) compartment. Most of 
 
 # Installing {#sec-install}
 
-Download `Reservoir-main` as a ZIP from GitHub (green **Code** button to **Download ZIP**) and unzip it. That folder **is** the package.
+Download `Reservoir` in Github using the code snippet below.
 
 Reservoir contains C++ that has to be compiled on your machine, so you need a compiler:
 
@@ -56,9 +52,7 @@ Then in R:
 
 ```{r}
 install.packages("Rcpp")
-
-install.packages(path.expand("~/Downloads/Reservoir-main"),
-                 repos = NULL, type = "source")
+devtools::install_github("micom-hub/Reservoir")
 ```
 
 `path.expand()` turns `~` into your full home path. R needs that here — inside quotes the shell won't expand it for you.
@@ -66,12 +60,15 @@ install.packages(path.expand("~/Downloads/Reservoir-main"),
 Expect a couple of minutes of compiler output. Warnings are normal; you want the last line to read `* DONE (Reservoir)`.
 
 ::: callout-important
-## Restart R
+## Clear Your Environment and Restart R
+
+To **clear your environment** use `rm(list = ls(.GlobalEnv))`.
 
 **Session: Restart R** (Ctrl/Cmd+Shift+F10) or go to the session tab at the top and select **Restart R**. R holds the old compiled library open, so installing over a loaded package can leave you running stale C++.
 :::
 
 ```{r}
+rm(list = ls(.GlobalEnv))
 library(Reservoir)
 ```
 
@@ -86,24 +83,23 @@ If Reservoir installs but `library(Reservoir)` fails, check to see if you accide
 # Your first epidemic
 
 ```{r}
-library(Reservoir)
 
 ds <- generate_dataset(
   n_per_mechanism = 1,                    # how many simulations
   mechanisms = "base",               # person-to-person spread
   population = population_spec(
                       num_days = 200,     # simulate 200 days
-                      pop_size = 300000   # population of 300,000 people
+                      pop_size = 3000   # population of 300,000 people
                     ),
   config = reservoir_config(
                       r0_base = 2.5       # each case infects 2.5 others
                     ),
   scope  = "full",
-  seed  = 1,                    # ensures reproductibility
+  seed  = 10,                    # ensures reproductibility
   verbose  = FALSE
 )
 
-run <- ds$base[[1]]     # pull out the single simulation
+run <- ds$base[[1]]     # pull out the single simulation (change to $vector or $waterborne when switching mechanisms)
 ```
 
 Look at it:
@@ -114,17 +110,13 @@ nf <- run$noise_full
 op <- par(mfrow = c(2, 3), mar = c(4, 4, 2, 1))
 plot(run$daily_true,           type = "l", lwd = 2, main = "Cases (true)",  xlab = "Day", ylab = "")
 plot(nf$daily_cases_reported,  type = "l", lwd = 2, main = "Cases (reported)", xlab = "Day", ylab = "")
-plot(nf$daily_hosp_true,       type = "l", lwd = 2, main = "Hospitalisations", xlab = "Day", ylab = "")
+plot(nf$daily_hosp_true,       type = "l", lwd = 2, main = "Hospitalizations", xlab = "Day", ylab = "")
 plot(nf$daily_death_true,      type = "l", lwd = 2, main = "Deaths",        xlab = "Day", ylab = "")
 plot(nf$wastewater_normalized, type = "l", lwd = 2, main = "Wastewater",    xlab = "Day", ylab = "")
 plot(run$daily_Rt,             type = "l", lwd = 2, main = "Rt",            xlab = "Day", ylab = "")
 abline(h = 1, lty = 2, col = "red")
 par(op)
 
-summary_sim(run)
-run$summary$R0
-run$summary$attack_rate
-run$summary$peak_day
 ```
 
 `run` is a list, so `$` gets you pieces of it. If you call `run$daily_true`, it will return a vector of 200 numbers that represents the daily case count.
@@ -173,9 +165,6 @@ legend("topright", c("R0 = 2.5", "R0 = 4.0"),
 ```
 
 ```{r}
-slow$summary$attack_rate      # fraction infected
-fast$summary$attack_rate
-
 slow$summary$peak_day
 fast$summary$peak_day
 ```
@@ -278,7 +267,7 @@ seeded <- generate_dataset(1, "base",
   config = reservoir_config(r0_base = 2.5, deterministic = TRUE),
   scope = "full", seed = 4, verbose = FALSE)$base[[1]]
 
-plot(novel$daily_true, type = "l", lwd = 2, col = "grey30",
+plot(novel$noise_full$daily_cases_reported, type = "l", lwd = 2, col = "grey30",
      xlab = "Day", ylab = "New cases per day")
 lines(seeded$daily_true, lwd = 2, col = "purple")
 legend("topright", c("Novel (nobody immune)", "50% already immune"),
@@ -597,12 +586,12 @@ Population geometry. `NULL` means "sample it per run."
 | `trigger_delay` | `NULL` | days between crossing and taking effect |
 | `contact_reduction` | `NULL` | β multiplier while reactive is active |
 | `iso_rate`, `quar_rate`, `pep_rate` | `NULL` | daily rates — `0.3` ≈ 3.3 days to isolation |
-| `prep_start_rate` | `NULL` | vaccination campaign rate |
+| `prep_start_rate` | `NULL` | vaccination/Prep campaign rate |
 | `prep_eff` | `NULL` | susceptibility reduction, 0–1 |
 | `school_closure`, `work_closure` | `NULL` | contact reductions folded into β |
 
 ::: callout-warning
-`prep_eff` alone does nothing — `prep_start_rate` must be non-zero or `Sprep` never populates.
+`prep_eff` alone does nothing; `prep_start_rate` must be non-zero or `Sprep` never populates.
 :::
 
 ## `reservoir_config()`
@@ -612,8 +601,8 @@ Priors and the observation model. 50+ arguments; these are the ones you'll touch
 **Distribution fields take three forms:**
 
 ```{r}
-r0_base = 2.5                        # pin it
-r0_base = c(2, 4)                    # a central 90% interval
+r0_base = 2.5        # pin it
+r0_base = c(2, 4)     # a central 90% interval
 r0_base = list(meanlog = log(3), sdlog = 0.7, shift = 1, floor = 1.1)
 ```
 
