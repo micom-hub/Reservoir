@@ -32,9 +32,6 @@ export(build_cfg_waterborne)
 #simulation
 export(run_sim)
 export(run_replicates)
-export(summary_sim)
-export(plot_sim)
-export(compartment)
 export(compute_daily_rt)
 export(compute_daily_rt_vector)
 export(compute_daily_rt_waterborne)
@@ -50,8 +47,3 @@ export(validate_dataset)
 export(extract_compartment_csvs)
 export(extract_all_runs_single_csv)
 
-#custom model builder
-export(build_model)
-export(model_SEIR)
-export(model_SEIAR)
-export(model_SEIARH)
