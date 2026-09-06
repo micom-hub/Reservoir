@@ -13,7 +13,7 @@
 
 ## Paper
 
-- **Reservoir Paper:** [Reservoir: A Large-Scale Simulated Dataset for Training and Evaluating Epidemiological Models]() <br> Carson Dudley, Reiden Magdaleno, Marisa Eisenberg -- Michigan Public Health Integrated Center for Outbreak Analytics and Modeling
+- **Reservoir Paper:** [Reservoir: A Large-Scale Simulated Dataset for Training and Evaluating Epidemiological Models](https://arxiv.org/abs/2608.27408) <br> Carson Dudley, Reiden Magdaleno, Marisa Eisenberg -- Michigan Public Health Integrated Center for Outbreak Analytics and Modeling
 
 ---
 
