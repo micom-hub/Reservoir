@@ -480,6 +480,19 @@ reservoir_config <- function(
     lab_batch_prob = 0.8,
     report_delay_prob = 0.8,
 
+
+    reporting_model = "parametric",
+    ramp_prob = 0.8,                            
+    ramp_days_range = c(7, 120),                   
+    ramp_init_frac_logrange = c(log(0.01), log(0.5)),
+    weekday_amp_range = c(0, 1.5),                  
+    report_delay_shape = 2.5,                     
+    lab_batch_days_range = c(30, 180),        
+    lab_batch_sd_range = c(0.02, 0.15),             
+    lab_bad_batch_prob = 0.005,                      
+    lab_bad_batch_range = c(0.7, 0.85),              
+    lab_capacity_rate_range = c(0, 0.4),            
+    
     # mechanism-specific
     vector = list(
       sigma_v_logrange = c(log(1/21), log(1/4)),
@@ -502,9 +515,9 @@ reservoir_config <- function(
       delta_eff_bounds = c(1e-14, 1.0)
     ),
 
-    # Retention; detrermines which runs are kept/discarded
-    min_cases_endemic    = 5L,
-    min_cases_nonendemic = 10L,
+    # DO NOT CHANGE
+    min_cases_endemic    = 0L,
+    min_cases_nonendemic = 0L,
 
     # tau-leaping controls stuff
     epsilon = 0.03, Ncritical = 10L, exactThreshold = 10.0, maxtau = Inf,

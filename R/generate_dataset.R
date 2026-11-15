@@ -13,9 +13,9 @@
 # Build a configuration object for human-to-human
 #' @export
 build_cfg_base <- function(p, config = reservoir_config()) {
-
+  
   s <- p$structure
-
+  
   cfg <- setup_sim(
     N = p$N, 
     P = p$P, A = p$A, 
@@ -30,25 +30,25 @@ build_cfg_base <- function(p, config = reservoir_config()) {
     asymp_trans = p$asymp_trans,
     kappa = p$kappa,
     n_waning_stages = p$n_waning_stages,
-
+    
     # structural flags
     no_latent = !s$has_latent,
     sis_mode = (s$immunity == "none"),
-
+    
     # seeding is overwritten by set_initial_conditions(); seed into a
     # compartment that is guaranteed to exist under the chosen structure
     n_seed = 1,
     seed_comp = "Is",
-
+    
     #Demographics params
     birth_rate = p$birth_rate,
     death_rate = p$death_rate,
     importation_rate = p$importation_rate,
-
+    
     #Wave change params
     wave_change_days = p$wave_change_days,
     wave_change_betas = p$wave_change_betas,
-
+    
     #Seasonality and noisiness params
     use_seasonality  = p$use_seasonality,
     n_harmonics = p$n_harmonics,
@@ -58,38 +58,38 @@ build_cfg_base <- function(p, config = reservoir_config()) {
     annual_jitter_sd = p$annual_jitter_sd,
     daily_noise_sd = p$daily_noise_sd,
     daily_noise_clamp = p$daily_noise_clamp %||% c(0.5, 2.0),
-
+    
     # school / work closure fold into beta
     # School / work closure, applied over the intervention window only.
     contact_mult    = (1 - p$school_closure) * (1 - p$work_closure),
     contact_on_day  = p$iso_on_day,
     contact_off_day = p$iso_off_day,
-
+    
     # Quarantine exit
     leave_quar_rate      = if (s$has_vaccination) 0.05 else 0.10,
     leave_quar_prep_rate = if (s$has_vaccination) 0.05 else 0.00,
-
+    
     iso_on_day = p$iso_on_day,  iso_off_day  = p$iso_off_day,  iso_active  = p$iso_active,
     quar_on_day = p$quar_on_day, quar_off_day = p$quar_off_day, quar_active = p$quar_active,
     pep_on_day = p$pep_on_day,  pep_off_day  = p$pep_off_day,  pep_active  = p$pep_active,
     prep_on_day = p$prep_on_day, prep_off_day = p$prep_off_day, prep_active = p$prep_active,
-
+    
     # PrEP/vaccination campaign rate
     prep_start_rate = p$prep_start_rate,
-
+    
     reactive = identical(p$interv_mode, "reactive") && p$has_intervention,
     on_threshold = p$on_threshold,
     off_threshold = p$off_threshold,
     trigger_delay = p$trigger_delay,
     reactive_contact_mult = p$contact_reduction,
-
+    
     # Numerical controls for atlmodel
     epsilon = config$epsilon,
     Ncritical  = config$Ncritical,
     exactThreshold = config$exactThreshold,
     maxtau   = config$maxtau
   )
-
+  
   # initial conditions
   cfg <- set_initial_conditions(
     cfg,
@@ -108,25 +108,25 @@ build_cfg_base <- function(p, config = reservoir_config()) {
     seed_comp = p$seed_comp %||% NA_character_,
     waning_stages = p$n_waning_stages
   )
-
+  
   # Super-spreading
   if (!is.null(p$ss_event_prob) && p$ss_event_prob > 0 && p$ss_boost > 0) {
     tf <- cfg$tf_days
     event_prob <- pmin(1, p$ss_event_prob)
-
+    
     # Excess
     is_event <- runif(tf) < event_prob
     excess <- ifelse(is_event,
-                       rgamma(tf, shape = p$ss_shape, scale = p$ss_scale), 0.0)
+                     rgamma(tf, shape = p$ss_shape, scale = p$ss_scale), 0.0)
     multipliers <- 1 + excess
-
+    
     # Rescale so E[multiplier] = 1, preserving expected transmission.
     expected <- 1 + event_prob * p$ss_boost
     multipliers <- multipliers / expected
-
+    
     cfg$beta_eff_daily <- pmax(0, cfg$beta_eff_daily * multipliers)
   }
-
+  
   #keep structure
   cfg$structure <- s
   cfg
@@ -137,7 +137,7 @@ build_cfg_base <- function(p, config = reservoir_config()) {
 #' @export
 build_cfg_vector <- function(p, config = reservoir_config()) {
   cfg <- build_cfg_base(p, config)
-
+  
   #one vector pool per patch at a constant vector-to-human ratio m
   Nh_q <- p$N * (cfg$patch_fracs %||% rep(1 / p$P, p$P))
   Nv_q <- round(Nh_q * p$Nv_init_frac)
@@ -150,16 +150,16 @@ build_cfg_vector <- function(p, config = reservoir_config()) {
               as.numeric(Ev_q),          # Ev
               as.numeric(Iv_q),          # Iv
               numeric(p$P))              # cumul_v
-
+  
   # Age-specific relative biting exposure normalized. Pop mean needs to be one
   cfg$bite_age_weights <- p$bite_age_weights %||% rep(1.0, p$A)
-
+  
   cfg$params$sigma_v <- p$sigma_v
   cfg$params$mu_v <- p$mu_v
   cfg$params$a_bite <- p$a_bite
   cfg$params$b_h <- p$b_h
   cfg$params$b_v <- p$b_v
-
+  
   cfg$comp_names <- c(.HUMAN_COMPS, "Sv", "Ev", "Iv", "cumul_v")
   cfg$n_vector_blocks  <- 4L
   cfg$vector_block_len <- p$P
@@ -171,25 +171,25 @@ build_cfg_vector <- function(p, config = reservoir_config()) {
 #' @export
 build_cfg_waterborne <- function(p, config = reservoir_config()) {
   cfg <- build_cfg_base(p, config)
-
+  
   # Start the reservoir at the level the seeded infectives
   w_unit <- p$w_unit %||% 1.0
-
+  
   # set_initial_conditions() has already run, so 
   blk    <- cfg$P * cfg$A
   Is_tot <- sum(cfg$x0[(6 * blk + 1):(7 * blk)])
   Ia_tot <- sum(cfg$x0[(7 * blk + 1):(8 * blk)])
   W0 <- (p$eta_I * Is_tot + p$eta_A * p$alpha_env * Ia_tot) /
-        max(p$mu_w, 1e-8) / w_unit
+    max(p$mu_w, 1e-8) / w_unit
   cfg$x0 <- c(cfg$x0, max(0, round(W0)))
-
+  
   cfg$params$alpha_env <- p$alpha_env
   cfg$params$mu_w <- p$mu_w
-
+  
   cfg$params$eta_I <- p$eta_I / w_unit
   cfg$params$eta_A <- p$eta_A / w_unit
   cfg$delta_eff_daily <- rep(p$delta_eff * w_unit, p$tf_days)
-
+  
   cfg$comp_names <- c(.HUMAN_COMPS, "W")
   cfg
 }
@@ -201,7 +201,7 @@ build_cfg_waterborne <- function(p, config = reservoir_config()) {
 run_one <- function(mechanism, params, run_id = 1L,
                     config = reservoir_config(),
                     min_attack_rate = 0.0) {
-
+  
   cfg <- tryCatch(
     switch(mechanism,
            base = build_cfg_base(params, config),
@@ -211,15 +211,15 @@ run_one <- function(mechanism, params, run_id = 1L,
       message("Run", run_id, "cfg error:", conditionMessage(e)); NULL
     })
   if (is.null(cfg)) return(NULL)
-
+  
   result <- tryCatch(.dispatch_engine(mechanism, cfg),
-    error = function(e) {
-      message("Run", run_id, "failed:", conditionMessage(e)); NULL
-    })
+                     error = function(e) {
+                       message("Run", run_id, "failed:", conditionMessage(e)); NULL
+                     })
   if (is.null(result)) return(NULL)
-
+  
   daily_true <- rowSums(result$daily_new_cases_block)
-
+  
   # Die-out filter
   total <- sum(daily_true)
   if (min_attack_rate > 0) {
@@ -241,11 +241,13 @@ run_one <- function(mechanism, params, run_id = 1L,
       return(NULL)
     }
   }
-
+  
   # limited noise for compute time
   nl <- apply_noise_limited(daily_true)
-
-  # full pipeline
+  
+  # full pipeline (replays the run's stored reporting draws, see sample_reporting)
+  cfg$params$reporting <- c(params$reporting,
+                            params[c("detection", "report_delay", "r_nb")])
   nf <- NULL
   if (isTRUE(config$compute_noise_full)) {
     nf <- tryCatch(
@@ -260,7 +262,7 @@ run_one <- function(mechanism, params, run_id = 1L,
         NULL
       })
   }
-
+  
   # Rt, expensive compute time
   rt_failed <- FALSE
   Rt <- if (isTRUE(config$compute_rt)) {
@@ -272,10 +274,10 @@ run_one <- function(mechanism, params, run_id = 1L,
                rep(NA_real_, cfg$tf_days)
              })
   } else rep(NA_real_, cfg$tf_days)
-
+  
   nz_Rt <- Rt[is.finite(Rt) & Rt > 0]
   s <- params$structure
-
+  
   summ <- list(
     rt_failed = rt_failed,
     total_cases = total,
@@ -308,7 +310,7 @@ run_one <- function(mechanism, params, run_id = 1L,
     is_vectorborne = as.integer(mechanism == "vector"),
     is_waterborne = as.integer(mechanism == "waterborne")
   )
-
+  
   list(
     run_id = run_id,
     mechanism = mechanism,
@@ -371,7 +373,7 @@ generate_dataset <- function(
   mechanisms <- .canon_mechanism(mechanisms)
   scope  <- match.arg(scope)
   config <- .scope_config(config, scope)
-
+  
   #more messages
   if (!inherits(structure, "reservoir_structure"))
     stop("`structure` must come from model_structure()")
@@ -379,47 +381,47 @@ generate_dataset <- function(
     stop("`population` must come from population_spec()")
   if (!inherits(policy, "reservoir_policy"))
     stop("`policy` must come from intervention_policy()")
-
+  
   dataset <- list()
-
+  
   for (mech in mechanisms) {
-
+    
     if (verbose) message("\n=== Mechanism: ", toupper(mech),
                          "  (scope: ", scope, ") ===")
-
+    
     runs <- list(); attempts <- 0L; run_id <- 1L
-
+    
     while (length(runs) < n_per_mechanism && attempts < max_attempts) {
       attempts <- attempts + 1L
-
+      
       if (!is.null(seed))
         set.seed(seed * (as.integer(max_attempts) + 1L) + attempts)
-
+      
       if (verbose) message("  [", mech, "] attempt ", attempts,
                            " | collected ", length(runs), "/", n_per_mechanism)
-
+      
       params <- tryCatch(
         sample_params(mech, structure, population, policy, config),
         error = function(e) {
           message("  Sampler failed: ", conditionMessage(e)); NULL
         })
       if (is.null(params)) next
-
+      
       run <- run_one(mech, params, run_id = run_id,
                      config = config, min_attack_rate = min_attack_rate)
-
+      
       if (!is.null(run)) {
         runs[[length(runs) + 1L]] <- run
         run_id <- run_id + 1L
       }
     }
-
+    
     if (length(runs) < n_per_mechanism)
       warning("Only collected ", length(runs), "/", n_per_mechanism,
               " runs for '", mech, "' after ", max_attempts, " attempts")
-
+    
     dataset[[mech]] <- runs
-
+    
     if (!is.null(save_dir)) {
       dir.create(save_dir, showWarnings = FALSE, recursive = TRUE)
       out_path <- file.path(save_dir, paste0(mech, "_runs.rds"))
@@ -427,7 +429,6 @@ generate_dataset <- function(
       if (verbose) message("  Saved to: ", out_path)
     }
   }
-
+  
   dataset
 }
-

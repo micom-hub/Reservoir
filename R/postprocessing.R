@@ -8,18 +8,18 @@
 # add_observation_noise
 #applies negbin noise to cases
 ################################################################################
-add_observation_noise <- function(daily_cases) {
-  r_val <- rlnorm(1, meanlog = log(50), sdlog = 1.0)
-
+add_observation_noise <- function(daily_cases, r_val = NULL) {
+  if (is.null(r_val)) r_val <- rlnorm(1, meanlog = log(50), sdlog = 1.0)
+  
   reported <- numeric(length(daily_cases))
   mask <- daily_cases > 0
-
+  
   if (any(mask)) {
     mu    <- daily_cases[mask]
     p_nb  <- r_val / (r_val + mu)
     reported[mask]  <- rnbinom(sum(mask), size = r_val, prob = p_nb)
   }
-
+  
   list(
     reported   = as.integer(reported),
     overdispersion_r = r_val
@@ -50,29 +50,32 @@ apply_noise_limited <- function(daily_cases_true) {
 #   3. Lab batch noise - batch accuracy variation, occasional bad batches
 #   4. Reporting delays - cases shifted forward with a shrinking delay dist
 ################################################################################
-add_reporting_effects <- function(true_cases, config = NULL) {
+add_reporting_effects <- function(true_cases, config = NULL, rp = NULL) {
   if (is.null(config)) config <- reservoir_config()
+  # rp: stored reporting parameters (params$reporting). Drawn here only for
+  # callers that don't supply them; the distributions are unchanged.
+  if (is.null(rp)) rp <- sample_reporting(config)
   cases    <- as.numeric(true_cases)
   num_days <- length(cases)
   info     <- list()
-
-  apply_reporting <- runif(1) < config$underreport_prob
-  apply_weekday   <- runif(1) < config$weekday_prob
-  apply_lab       <- runif(1) < config$lab_batch_prob
-  apply_delays    <- runif(1) < config$report_delay_prob
-
+  
+  apply_reporting <- rp$apply_reporting
+  apply_weekday   <- rp$apply_weekday
+  apply_lab       <- rp$apply_lab
+  apply_delays    <- rp$apply_delays
+  
   # Shared ramp parameters used by both reporting and delays
-  days_to_max    <- sample(30:365, 1)
-  outbreak_start <- sample(0:31, 1)
-  steepness      <- runif(1, 4, 8)
+  days_to_max    <- rp$days_to_max
+  outbreak_start <- rp$outbreak_start
+  steepness      <- rp$steepness
   midpoint       <- 0.5
   abs_days       <- (seq_len(num_days) - 1) + outbreak_start
   progress       <- pmin(abs_days / days_to_max, 1)
-
+  
   # Stage 1: underreporting ramp
   if (apply_reporting) {
-    init_rate  <- runif(1, 0.05, 0.4)
-    final_rate <- runif(1, 0.25, 0.85)
+    init_rate  <- rp$init_rate
+    final_rate <- rp$final_rate
     base_rates <- init_rate + (final_rate - init_rate) *
       (1 / (1 + exp(-steepness * (progress - midpoint))))
     noise_vec  <- rnorm(num_days, 0, 0.05)
@@ -81,10 +84,10 @@ add_reporting_effects <- function(true_cases, config = NULL) {
                          as.integer(cases), rate_vec)
     info$reporting <- list(init_rate = init_rate, final_rate = final_rate)
   }
-
+  
   # Stage 2: weekday effects (vectorized)
   if (apply_weekday) {
-    offset       <- sample(0:6, 1)
+    offset       <- rp$weekday_offset
     weekday_mean <- c(1.2, 1.0, 1.0, 1.0, 0.9, 0.6, 0.4)
     weekday_sd   <- c(0.15, 0.1, 0.1, 0.1, 0.12, 0.2, 0.2)
     wd_idx  <- (seq_len(num_days) - 1 + offset) %% 7 + 1
@@ -92,10 +95,10 @@ add_reporting_effects <- function(true_cases, config = NULL) {
     cases   <- cases * factors
     info$weekday <- TRUE
   }
-
+  
   # Stage 3: lab batch noise
   if (apply_lab) {
-    batch_size <- max(10L, rpois(1, 100))
+    batch_size <- rp$batch_size
     n_batches  <- num_days %/% batch_size + 1L
     acc        <- rnorm(n_batches, 1.0, 0.08)
     bad        <- runif(n_batches) < 0.005
@@ -110,11 +113,11 @@ add_reporting_effects <- function(true_cases, config = NULL) {
     }
     info$lab <- list(batch_size = batch_size)
   }
-
+  
   # stage 4 reporting delay
   if (apply_delays) {
-    init_max_delay  <- sample(7:21, 1)
-    final_max_delay <- sample(2:7, 1)
+    init_max_delay  <- rp$init_max_delay
+    final_max_delay <- rp$final_max_delay
     cases      <- apply_reporting_delays_cpp(
       cases, progress,
       init_max_delay, final_max_delay,
@@ -122,11 +125,62 @@ add_reporting_effects <- function(true_cases, config = NULL) {
     )
     info$delay <- list(init_max = init_max_delay, final_max = final_max_delay)
   }
-
+  
   list(
     reported = as.integer(round(pmax(0, cases))),
     info     = info
   )
+}
+
+
+################################################################################
+# report_parametric - old version
+################################################################################
+report_parametric <- function(true_cases, rp, config = NULL) {
+  if (is.null(config)) config <- reservoir_config()
+  n   <- length(true_cases)
+  det <- rep(rp$detection, n)
+  if (isTRUE(rp$apply_ramp)) {
+    prog <- pmin((seq_len(n) - 1) / max(rp$ramp_days, 1), 1)
+    det  <- det * (rp$ramp_init_frac + (1 - rp$ramp_init_frac) * prog)
+  }
+  lab_info <- NULL
+  if (isTRUE(rp$apply_lab)) {
+    blk   <- (seq_len(n) - 1L) %/% max(1L, rp$lab_batch_days) + 1L
+    nb    <- max(blk)
+    level <- rnorm(nb, 1, rp$lab_batch_sd)
+    bad   <- runif(nb) < (config$lab_bad_batch_prob %||% 0.005)
+    rng   <- config$lab_bad_batch_range %||% c(0.7, 0.85)
+    level[bad] <- runif(sum(bad), rng[1], rng[2])
+    expected <- pmax(true_cases, 0) * det
+    p90      <- if (any(expected > 0)) quantile(expected[expected > 0], 0.9) else 1
+    penalty  <- exp(-rp$lab_capacity_rate * pmax(0, expected / p90 - 0.8))
+    det      <- det * pmax(level[blk], 0) * penalty
+    lab_info <- c(batch_days = rp$lab_batch_days, batch_sd = rp$lab_batch_sd,
+                  capacity_rate = rp$lab_capacity_rate, bad_batches = sum(bad))
+  }
+  cases <- rbinom(n, as.integer(round(pmax(true_cases, 0))), pmin(1, pmax(0, det)))
+  cases <- as.numeric(cases)
+  if (isTRUE(rp$apply_delays)) {
+    shape <- config$report_delay_shape %||% 2.5
+    kmax  <- max(3L, as.integer(ceiling(qgamma(0.999, shape, rate = shape / rp$report_delay))))
+    dk    <- dgamma(0:kmax, shape = shape, rate = shape / rp$report_delay); dk <- dk / sum(dk)
+    cases <- as.numeric(stats::convolve(cases, rev(dk), type = "open"))[seq_len(n)]
+  }
+  if (isTRUE(rp$apply_weekday)) {
+    ref <- c(1.2, 1.0, 1.0, 1.0, 0.9, 0.6, 0.4)
+    f   <- pmax(0.05, 1 + rp$weekday_amp * (ref - 1)); f <- f / mean(f)
+    cases <- cases * f[(seq_len(n) - 1 + rp$weekday_offset) %% 7 + 1]
+  }
+  cases <- pmax(cases, 0)
+  out <- integer(n); pos <- cases > 0
+  out[pos] <- rnbinom(sum(pos), size = max(0.5, rp$r_nb), mu = cases[pos])
+  list(reported = out,
+       info = list(model = "parametric", detection = rp$detection,
+                   report_delay = rp$report_delay, r_nb = rp$r_nb,
+                   ramp = if (isTRUE(rp$apply_ramp)) c(days = rp$ramp_days, init_frac = rp$ramp_init_frac),
+                   weekday_amp = if (isTRUE(rp$apply_weekday)) rp$weekday_amp,
+                   lab = lab_info))
 }
 
 
@@ -155,10 +209,10 @@ add_smaller_reporting_noise <- function(values, noise_scale = 1.0) {
   T         <- length(arr)
   apply_rep <- runif(1) < 0.7
   apply_wd  <- runif(1) < 0.4
-
+  
   if (apply_rep) {
     init_rate  <- pmax(0.05, pmin(0.95, runif(1, 0.5 * noise_scale,
-                                               0.8 * noise_scale)))
+                                              0.8 * noise_scale)))
     final_rate <- runif(1, 0.80, 0.98)
     days_to_max <- sample(30:300, 1)
     x          <- seq_len(T) - 1
@@ -170,18 +224,18 @@ add_smaller_reporting_noise <- function(values, noise_scale = 1.0) {
     arr        <- mapply(function(n, p) rbinom(1, as.integer(n), p),
                          as.integer(arr), rates)
   }
-
+  
   if (apply_wd) {
     offset <- sample(0:6, 1)
     for (i in seq_len(T)) {
       wd     <- (i - 1 + offset) %% 7
       factor <- if (wd == 5) runif(1, 0.85, 0.95)
-                else if (wd == 6) runif(1, 0.80, 0.90)
-                else 1.0
+      else if (wd == 6) runif(1, 0.80, 0.90)
+      else 1.0
       arr[i] <- arr[i] * factor
     }
   }
-
+  
   as.integer(round(pmax(0, arr)))
 }
 
@@ -195,17 +249,17 @@ add_smaller_reporting_noise <- function(values, noise_scale = 1.0) {
 # hosp_probs, death_probs: length-A numeric vectors
 ################################################################################
 generate_hosp_and_deaths <- function(daily_symp_by_age,
-                                      hosp_probs,
-                                      death_probs,
-                                      hosp_lag_shape,
-                                      hosp_lag_scale,
-                                      death_lag_shape,
-                                      death_lag_scale) {
+                                     hosp_probs,
+                                     death_probs,
+                                     hosp_lag_shape,
+                                     hosp_lag_scale,
+                                     death_lag_shape,
+                                     death_lag_scale) {
   A           <- nrow(daily_symp_by_age)
   T           <- ncol(daily_symp_by_age)
   daily_hosp  <- matrix(0L, nrow = A, ncol = T)
   daily_death <- matrix(0L, nrow = A, ncol = T)
-
+  
   # Population-level convolution
   # really to help for speed
   lag_days <- seq(0, min(T - 1L, 60L))
@@ -213,21 +267,21 @@ generate_hosp_and_deaths <- function(daily_symp_by_age,
   d_kern   <- dgamma(lag_days, shape = death_lag_shape, rate = 1 / death_lag_scale)
   h_kern   <- h_kern / sum(h_kern)
   d_kern   <- d_kern / sum(d_kern)
-
+  
   cfr_mult  <- rlnorm(1, 0, 0.4)
   cfr_drift <- runif(1, -0.4, 0.1)
   cfr_time  <- exp(cfr_drift * (seq_len(T) - 1) / max(T - 1, 1))
-
+  
   for (a in seq_len(A)) {
     symp <- as.numeric(daily_symp_by_age[a, ])
-
+    
     # Hospitalizations: NegBin daily count convolution
     nb_r_h  <- max(0.5, rlnorm(1, log(2), 1.5))
     mu_h    <- pmax(0, symp * hosp_probs[a])
     n_hosp  <- rnbinom(T, size = nb_r_h, mu = mu_h)
     hosp_sig <- as.numeric(convolve(n_hosp, rev(h_kern), type = "open"))[seq_len(T)]
     daily_hosp[a, ] <- pmax(0L, as.integer(round(hosp_sig)))
-
+    
     # Deaths: fraction of hospitalizations convolution
     eff_cfr   <- pmin(0.95, death_probs[a] * cfr_mult * cfr_time)
     nb_r_d    <- max(0.5, rlnorm(1, log(1), 1.5))
@@ -236,7 +290,7 @@ generate_hosp_and_deaths <- function(daily_symp_by_age,
     death_sig <- as.numeric(convolve(n_die, rev(d_kern), type = "open"))[seq_len(T)]
     daily_death[a, ] <- pmax(0L, as.integer(round(death_sig)))
   }
-
+  
   list(hosp = daily_hosp, death = daily_death)
 }
 
@@ -259,31 +313,31 @@ compute_hospital_occupancy <- function(daily_hosp, avg_los = 7L, ...) {
 # Convolves incidence with a gamma shedding kernel
 ################################################################################
 generate_wastewater <- function(daily_cases,
-                                 noise_sigma   = 0.2,
-                                 smooth_window = 3L,
-                                 pmmov_mean    = 1e6,
-                                 pmmov_sigma   = 0.15) {
+                                noise_sigma   = 0.2,
+                                smooth_window = 3L,
+                                pmmov_mean    = 1e6,
+                                pmmov_sigma   = 0.15) {
   T               <- length(daily_cases)
   mean_shed_days  <- runif(1, 3, 7)
   shed_dispersion <- 2.0
-
+  
   x_kern <- seq(0, 29)
   kernel <- dgamma(x_kern, shape = shed_dispersion,
                    rate  = shed_dispersion / mean_shed_days)
   kernel <- kernel / sum(kernel)
-
+  
   pathogen <- convolve(as.numeric(daily_cases), rev(kernel),
                        type = "open")[seq_len(T)]
-
+  
   if (smooth_window > 1L) {
     k        <- rep(1, smooth_window) / smooth_window
     pathogen <- as.numeric(stats::filter(pathogen, k, sides = 2))
     pathogen[is.na(pathogen)] <- 0
   }
-
+  
   pathogen <- pmax(0, pathogen * rlnorm(T, 0, noise_sigma))
   pmmov    <- pmmov_mean * rlnorm(T, 0, pmmov_sigma)
-
+  
   list(
     raw        = pathogen,
     normalized = pathogen / pmax(pmmov, 1e-9),
@@ -301,19 +355,19 @@ generate_wastewater <- function(daily_cases,
 # Synthetic syndromic surveillance (e.g. ILI consultations)
 ################################################################################
 generate_syndromic <- function(daily_symp,
-                                consult_prob  = 0.1,
-                                noise_sigma   = 0.2,
-                                smooth_window = 3L) {
+                               consult_prob  = 0.1,
+                               noise_sigma   = 0.2,
+                               smooth_window = 3L) {
   T        <- length(daily_symp)
   expected <- daily_symp * consult_prob
   noisy    <- pmax(0, expected * rlnorm(T, 0, noise_sigma))
-
+  
   if (smooth_window > 1L) {
     k     <- rep(1, smooth_window) / smooth_window
     noisy <- as.numeric(stats::filter(noisy, k, sides = 2))
     noisy[is.na(noisy)] <- 0
   }
-
+  
   list(
     signal = as.integer(round(noisy)),
     info   = list(consult_prob = consult_prob, noise_sigma = noise_sigma)
@@ -337,28 +391,32 @@ generate_syndromic <- function(daily_symp,
 #
 ################################################################################
 run_postprocessing <- function(result,
-                                params,
-                                P,
-                                A,
-                                num_days,
-                                age_hosp_probs  = NULL,
-                                age_death_probs = NULL,
-                                skip_occupancy  = FALSE,
-                                config          = NULL) {
+                               params,
+                               P,
+                               A,
+                               num_days,
+                               age_hosp_probs  = NULL,
+                               age_death_probs = NULL,
+                               skip_occupancy  = FALSE,
+                               config          = NULL) {
   if (is.null(config)) config <- reservoir_config()
   block <- P * A
-
+  
   # aggregate daily
   daily_true <- rowSums(result$daily_new_cases_block)
-
+  
   # 1. Observation noise
-  noisy<- add_observation_noise(daily_true)
-  daily_noisy <- noisy$reported
-
-  # 2. Reporting effects
-  rep_out   <- add_reporting_effects(daily_noisy, config)
+  rp <- params$reporting                     # NULL for params made before 0.4
+  if (!is.null(rp) && identical(rp$model, "parametric")) {
+    rep_out <- report_parametric(daily_true, rp, config)
+    noisy   <- list(overdispersion_r = rp$r_nb)
+  } else {
+    # legacy pipeline: NB noise, then ramp / weekday / lab / delay effects
+    noisy       <- add_observation_noise(daily_true, r_val = rp$overdispersion_r)
+    rep_out     <- add_reporting_effects(noisy$reported, config, rp = rp)
+  }
   daily_rep <- enforce_no_post_outbreak(daily_true, rep_out$reported)
-
+  
   # 3. Build a x t matrix
   # daily_new_cases_block is num_days x (P*A), columns ordered p*A + a (0-based)
   if (A > 1) {
@@ -373,19 +431,19 @@ run_postprocessing <- function(result,
   } else {
     daily_by_age <- matrix(daily_true, nrow = 1, ncol = num_days)
   }
-
+  
   daily_symp_by_age <- daily_by_age * (1 - params$p_asym)
-
+  
   # 4. Hospitalizations and deaths
   if (is.null(age_hosp_probs))
     age_hosp_probs  <- seq(0.003, 0.25, length.out = A)
   if (is.null(age_death_probs))
     age_death_probs <- seq(0.001, 0.15, length.out = A)
-
+  
   # Ensure vectors for A=1 scalar inputs
   age_hosp_probs  <- rep_len(age_hosp_probs,  A)
   age_death_probs <- rep_len(age_death_probs, A)
-
+  
   if (!isTRUE(config$compute_hosp_deaths)) {
     hd <- list(hosp  = matrix(0L, nrow = A, ncol = num_days),
                death = matrix(0L, nrow = A, ncol = num_days))
@@ -398,27 +456,27 @@ run_postprocessing <- function(result,
     death_lag_shape = runif(1, 1, 4),
     death_lag_scale = runif(1, 2, 8)
   )
-
+  
   daily_hosp_true  <- colSums(hd$hosp)
   daily_death_true <- colSums(hd$death)
-
+  
   # 5. Hospital occupancy
   occupancy <- if (skip_occupancy || !isTRUE(config$compute_hosp_deaths))
     integer(num_days) else compute_hospital_occupancy(daily_hosp_true)
-
+  
   # 6. Reported hosp and deaths
   daily_hosp_rep  <- add_smaller_reporting_noise(daily_hosp_true,  1.0)
   daily_death_rep<- add_smaller_reporting_noise(daily_death_true, 0.75)
-
+  
   # 7.Wastewater
   ww <- if (isTRUE(config$compute_wastewater)) generate_wastewater(daily_true)
-        else list(raw = numeric(num_days), normalized = numeric(num_days), info = list())
-
+  else list(raw = numeric(num_days), normalized = numeric(num_days), info = list())
+  
   # 8. Syndromic
   synd <- if (isTRUE(config$compute_syndromic))
     generate_syndromic(colSums(daily_symp_by_age))
   else list(signal = integer(num_days), info = list())
-
+  
   list(
     daily_cases_true      = daily_true,
     daily_cases_reported  = daily_rep,

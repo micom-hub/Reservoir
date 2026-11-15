@@ -16,24 +16,40 @@ run_sim <- function(cfg,
                     death_prob = 0.01,
                     seed       = NULL,
                     mechanism  = "base",
-                    config     = reservoir_config()) {
-
+                    config     = reservoir_config(),
+                    reporting  = NULL) {
+  
   if (!is.null(seed)) set.seed(seed)
-
+  
   result <- .dispatch_engine(mechanism, cfg)
-
+  
+  # Reporting process. generate_dataset() passes the run's stored draws;
+  # setup_sim() configs have none, so draw them here from the same priors
+  # (otherwise run_sim would silently fall back to the legacy pipeline).
+  # Supply `reporting` to fix them, e.g. list(detection = 0.2, report_delay = 7,
+  # r_nb = 10) on top of sample_reporting(config).
+  if (is.null(cfg$params$reporting)) {
+    rp <- reporting %||% sample_reporting(config)
+    if (identical(rp$model, "parametric")) {
+      rp$detection    <- rp$detection    %||% .logunif(config$detection_logrange)
+      rp$report_delay <- rp$report_delay %||% round(.runif_r(config$report_delay_range))
+      rp$r_nb         <- rp$r_nb         %||% rlnorm(1, config$r_nb$meanlog, config$r_nb$sdlog)
+    }
+    cfg$params$reporting <- rp
+  }
+  
   out <- run_postprocessing(
     result   = result, params = cfg$params,
     P = cfg$P, A = cfg$A, num_days = cfg$tf_days,
     age_hosp_probs = hosp_prob, age_death_probs = death_prob,
     config = config
   )
-
+  
   Rt <- compute_daily_rt(result, cfg, mechanism = mechanism)
-
+  
   total_cases <- sum(out$daily_cases_true)
   nz_Rt <- Rt[is.finite(Rt) & Rt > 0]
-
+  
   c(out, list(
     daily_Rt    = Rt,
     final_state = result$final_state,
@@ -58,10 +74,10 @@ run_sim <- function(cfg,
 ################################################################################
 .dispatch_engine <- function(mechanism, cfg) {
   switch(mechanism,
-    base = simulate_structured_atl_cpp(cfg),
-    vector = simulate_vectorborne_atl_cpp(cfg),
-    waterborne = simulate_env_atl_cpp(cfg),
-    stop("unknown mechanism: ", mechanism)
+         base = simulate_structured_atl_cpp(cfg),
+         vector = simulate_vectorborne_atl_cpp(cfg),
+         waterborne = simulate_env_atl_cpp(cfg),
+         stop("unknown mechanism: ", mechanism)
   )
 }
 
@@ -74,15 +90,15 @@ run_sim <- function(cfg,
   if (is.null(x$daily_true))
     stop("object does not look like a Reservoir run: no `daily_cases_true` ",
          "or `daily_true` field")
-
+  
   out <- list(daily_cases_true = x$daily_true,
               daily_Rt         = x$daily_Rt,
               summary          = x$summary)
-
+  
   # different noise to help with run time
   if (!is.null(x$noise_limited$daily_cases))
     out$daily_cases_reported <- x$noise_limited$daily_cases
-
+  
   # full signal
   nf <- x$noise_full
   if (!is.null(nf)) {
@@ -167,28 +183,28 @@ run_replicates <- function(cfg, n_reps = 10L, hosp_prob = 0.05,
 ################################################################################
 .rt_V <- function(block, sub, sigma, gamma, kappa, p_asym,
                   iso_t, quar_t, pep_t, death_rate, extra_dim = 0L) {
-
+  
   dim <- sub$n_states * block + extra_dim
   V <- matrix(0, dim, dim)
-
+  
   if (sub$n_states == 5L) {
     mu_L   <- sigma + quar_t + pep_t + death_rate
     mu_Is  <- gamma + iso_t  + death_rate
     mu_Ia  <- kappa + iso_t  + gamma + death_rate
     mu_Iso <- gamma + death_rate
     mu_QL  <- sigma + pep_t  + death_rate
-
+    
     for (cell in seq_len(block)) {
       iL   <- .rt_idx(1L, cell, block); iIs  <- .rt_idx(2L, cell, block)
       iIa  <- .rt_idx(3L, cell, block); iIso <- .rt_idx(4L, cell, block)
       iQL  <- .rt_idx(5L, cell, block)
-
+      
       V[iL, iL]     <-  mu_L
       V[iIs, iIs]   <-  mu_Is
       V[iIa, iIa]   <-  mu_Ia
       V[iIso, iIso] <-  mu_Iso
       V[iQL, iQL]   <-  mu_QL
-
+      
       V[iIs,  iL]  <- -sigma * (1 - p_asym)
       V[iIa,  iL]  <- -sigma * p_asym
       V[iQL,  iL]  <- -quar_t
@@ -202,7 +218,7 @@ run_replicates <- function(cfg, n_reps = 10L, hosp_prob = 0.05,
     # {Is, Ia}: no latent stage call
     mu_Is <- gamma + iso_t + death_rate
     mu_Ia <- kappa + iso_t + gamma + death_rate
-
+    
     for (cell in seq_len(block)) {
       iIs <- .rt_idx(1L, cell, block); iIa <- .rt_idx(2L, cell, block)
       V[iIs, iIs] <-  mu_Is
@@ -224,10 +240,10 @@ run_replicates <- function(cfg, n_reps = 10L, hosp_prob = 0.05,
   block <- P * A
   C  <- cfg$C; Mp <- cfg$Mp
   asymp_trans <- cfg$params$asymp_trans
-
+  
   for (p in seq_len(P)) for (a in seq_len(A)) {
     target_cell <- .rt_cell_idx(p, a, A)
-
+    
     for (q in seq_len(P)) {
       mpq <- Mp[p, q]
       if (mpq == 0) next
@@ -235,12 +251,12 @@ run_replicates <- function(cfg, n_reps = 10L, hosp_prob = 0.05,
         source_cell <- .rt_cell_idx(q, b, A)
         N_source <- h$N[source_cell]
         if (N_source <= 0) next
-
+        
         contact <- beta_t * scale * mpq * C[a, b] * s_eff[target_cell] / N_source
-
+        
         src_is <- .rt_idx(sub$is_idx, source_cell, block)
         src_ia <- if (!is.na(sub$ia_idx)) .rt_idx(sub$ia_idx, source_cell, block) else NA
-
+        
         for (k in seq_along(sub$entry)) {
           tgt <- .rt_idx(sub$entry[k], target_cell, block)
           w   <- sub$entry_w[k]
@@ -270,19 +286,19 @@ run_replicates <- function(cfg, n_reps = 10L, hosp_prob = 0.05,
   state <- result$state_over_time[day, ]
   h <- .rt_extract_human_state(state, block)
   prep_t <- .rt_driver(cfg, "prep_eff_daily", day, default = 0.0)
-
+  
   # Rt reflects what actually happened rather than the supplied driver value.
   active <- 1.0
   if (isTRUE(cfg$reactive_mode == 1L) && !is.null(result$intervention_active))
     active <- result$intervention_active[min(day, length(result$intervention_active))]
-
+  
   beta_t <- .rt_driver(cfg, "beta_eff_daily", day)
   if (isTRUE(cfg$reactive_mode == 1L) && active > 0)
     beta_t <- beta_t * (cfg$reactive_contact_mult %||% 1.0)
-
+  
   # Efficacy is not gated by controller
   s_eff <- h$S + (1 - prep_t) * h$Sprep
-
+  
   list(
     block = block, state = state, human = h, s_eff = s_eff,
     beta_t = beta_t,
@@ -306,12 +322,12 @@ run_replicates <- function(cfg, n_reps = 10L, hosp_prob = 0.05,
 compute_daily_rt <- function(result, cfg, mechanism = "base") {
   has_latent <- !isTRUE(cfg$no_latent == 1L)
   sub <- .rt_subsystem(has_latent, cfg$params$p_asym)
-
+  
   switch(mechanism,
-    base       = .rt_loop_base(result, cfg, sub),
-    vector     = .rt_loop_vector(result, cfg, sub),
-    waterborne = .rt_loop_waterborne(result, cfg, sub),
-    stop("unknown mechanism: ", mechanism)
+         base       = .rt_loop_base(result, cfg, sub),
+         vector     = .rt_loop_vector(result, cfg, sub),
+         waterborne = .rt_loop_waterborne(result, cfg, sub),
+         stop("unknown mechanism: ", mechanism)
   )
 }
 
@@ -351,19 +367,19 @@ compute_daily_rt_waterborne <- function(result, cfg)
   b_age <- cfg$bite_age_weights %||% rep(1.0, A)
   Mp <- cfg$Mp
   Rt <- numeric(cfg$tf_days)
-
+  
   for (day in seq_len(cfg$tf_days)) {
     d     <- .rt_common_day(result, cfg, day)
     dim_h <- sub$n_states * block
     iEv   <- dim_h + seq_len(P)          # Ev_q
     iIv   <- dim_h + P + seq_len(P)      # Iv_q
     dim_total <- dim_h + 2L * P
-
+    
     beta_route <- d$beta_t * d$f_interv_t
     F_mat <- matrix(0, dim_total, dim_total)
-
+    
     Sv <- d$state[offSv + seq_len(P)]
-
+    
     # Per-patch human totals
     Nh_q <- numeric(P); D_q <- numeric(P)
     for (q in seq_len(P)) {
@@ -378,13 +394,13 @@ compute_daily_rt_waterborne <- function(result, cfg)
       }
       Nh_q[q] <- tot; D_q[q] <- dq
     }
-
+    
     for (p in seq_len(P)) for (a in seq_len(A)) {
       cell <- .rt_cell_idx(p, a, A)
       for (q in seq_len(P)) {
         mpq <- Mp[p, q]
         if (mpq == 0) next
-
+        
         # vector -> human, into whichever states new infections enter
         if (Nh_q[q] > 0) {
           for (k in seq_along(sub$entry)) {
@@ -394,11 +410,11 @@ compute_daily_rt_waterborne <- function(result, cfg)
               cfg$params$b_h * mpq * d$s_eff[cell] / Nh_q[q]
           }
         }
-
+        
         # human -> vector
         if (D_q[q] > 0) {
           coef <- beta_route * cfg$params$a_bite * cfg$params$b_v *
-                  mpq * b_age[a] * Sv[q] / D_q[q]
+            mpq * b_age[a] * Sv[q] / D_q[q]
           src_is <- .rt_idx(sub$is_idx, cell, block)
           F_mat[iEv[q], src_is] <- F_mat[iEv[q], src_is] + coef
           if (!is.na(sub$ia_idx)) {
@@ -409,7 +425,7 @@ compute_daily_rt_waterborne <- function(result, cfg)
         }
       }
     }
-
+    
     V <- .rt_V(block, sub, cfg$params$sigma, cfg$params$gamma,
                cfg$params$kappa, cfg$params$p_asym,
                d$iso_t, d$quar_t, d$pep_t, cfg$params$death_rate,
@@ -419,7 +435,7 @@ compute_daily_rt_waterborne <- function(result, cfg)
       V[iIv[q], iIv[q]] <- cfg$params$mu_v
       V[iIv[q], iEv[q]] <- -cfg$params$sigma_v
     }
-
+    
     Rt[day] <- .rt_spectral_radius(F_mat, V)
   }
   Rt
@@ -430,19 +446,19 @@ compute_daily_rt_waterborne <- function(result, cfg)
   for (day in seq_len(cfg$tf_days)) {
     d <- .rt_common_day(result, cfg, day)
     dim_h <- sub$n_states * d$block
-
+    
     f_contact_t <- .rt_driver(cfg, "f_contact_daily", day, default = 1.0)
     f_water_t   <- .rt_driver(cfg, "f_water_daily",   day, default = 1.0)
     delta_t     <- .rt_driver(cfg, "delta_eff_daily", day)
-
+    
     F_mat <- matrix(0, dim_h, dim_h)
     F_mat <- .rt_add_contact_F(F_mat, d$human, cfg, sub, d$beta_t, d$s_eff,
                                scale = f_contact_t)
-
+    
     #W collapsed at qss
     w_per_Is <- cfg$params$eta_I / max(cfg$params$mu_w, 1e-8)
     w_per_Ia <- cfg$params$eta_A * cfg$params$alpha_env / max(cfg$params$mu_w, 1e-8)
-
+    
     for (target_cell in seq_len(d$block)) {
       water_Is <- delta_t * f_water_t * d$s_eff[target_cell] * w_per_Is
       water_Ia <- delta_t * f_water_t * d$s_eff[target_cell] * w_per_Ia
@@ -457,7 +473,7 @@ compute_daily_rt_waterborne <- function(result, cfg)
         }
       }
     }
-
+    
     V <- .rt_V(d$block, sub, cfg$params$sigma, cfg$params$gamma,
                cfg$params$kappa, cfg$params$p_asym,
                d$iso_t, d$quar_t, d$pep_t, cfg$params$death_rate)
@@ -465,3 +481,4 @@ compute_daily_rt_waterborne <- function(result, cfg)
   }
   Rt
 }
+
