@@ -19,6 +19,7 @@ S3method(print, reservoir_config)
 
 #sampling
 export(sample_params)
+export(sample_reporting)
 export(check_sampler)
 export(compute_ip)
 
@@ -46,4 +47,5 @@ export(validate_dataset)
 #export
 export(extract_compartment_csvs)
 export(extract_all_runs_single_csv)
+
 

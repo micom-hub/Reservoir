@@ -1,7 +1,7 @@
 Package: Reservoir
 Type: Package
 Title: Modular Stochastic Epidemic Simulation and Synthetic Surveillance Data Generation
-Version: 0.3.2
+Version: 1.0.0
 Authors@R: person("Reiden-Magdaleno", email = "reiden@umich.edu",
                   role = c("aut", "cre"))
 Description: A modular pipeline for generating labeled synthetic epidemic
